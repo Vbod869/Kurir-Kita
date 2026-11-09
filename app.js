@@ -93,28 +93,19 @@ function addressCandidateFromOcr(raw) {
 
 async function readAddressFromPhoto(file) {
   if (!window.Tesseract) throw new Error('Mesin pembaca foto belum termuat. Pastikan internet aktif, lalu muat ulang halaman.');
-  const rotations = [270, 90, 0, 180];
+  const rotations = [90, 270, 0, 180];
   let best = null;
   for (let i = 0; i < rotations.length; i++) {
     setStatus(`Mengenali arah dan tulisan label (${i + 1}/4)...`);
     const canvas = await makeOcrCanvas(file, rotations[i], true);
     let result;
-    try {
-      result = await Tesseract.recognize(canvas, 'ind+eng', {
-        logger: m => {
-          if (m.status === 'recognizing text') setStatus(`Membaca alamat dari foto: ${Math.round(m.progress * 100)}%`);
-        },
-        config: { tessedit_pageseg_mode: '11', preserve_interword_spaces: '1' }
-      });
-    } catch (firstError) {
-      // Fallback to English model if Indonesian trained data cannot be downloaded.
-      result = await Tesseract.recognize(canvas, 'eng', {
-        logger: m => {
-          if (m.status === 'recognizing text') setStatus(`Membaca alamat dari foto: ${Math.round(m.progress * 100)}%`);
-        },
-        config: { tessedit_pageseg_mode: '11', preserve_interword_spaces: '1' }
-      });
-    }
+    result = await Tesseract.recognize(canvas, 'eng', {
+      logger: m => {
+        if (m.status === 'recognizing text') setStatus(`Membaca alamat dari foto: ${Math.round(m.progress * 100)}%`);
+      },
+      // Sparse-text mode works better for courier labels containing separate address blocks.
+      config: { tessedit_pageseg_mode: '12', preserve_interword_spaces: '1' }
+    });
     const candidate = addressCandidateFromOcr(result.data.text || '');
     if (!best || candidate.score > best.score) best = candidate;
     if (candidate.score >= 20 && /\b(jl|jalan|gang)\b/i.test(candidate.text)) break;
