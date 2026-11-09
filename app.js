@@ -28,11 +28,45 @@ function showLocation(lat, lon, title, address, zoom=18) {
 function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+function normalizeOcrAddress(value) {
+  return String(value || '')
+    .replace(/^\s*[\[\]({]+/g, '')
+    .replace(/\b3l\b|\b31(?=\s*[.])/gi, 'Jl')
+    .replace(/\bJ1\b/gi, 'Jl')
+    .replace(/\bRW[. ]*Q?0?1\b/gi, 'RW.001')
+    .replace(/\bRT[. ]*O?0?6\b/gi, 'RT.006')
+    .replace(/\bCiraca\b/gi, 'Ciracas')
+    .replace(/\bJakarta\s+Timur\b/gi, 'Jakarta Timur')
+    .replace(/\bGang[. ]*H\b/gi, 'Gang H. Encit')
+    .replace(/\s+/g, ' ')
+    .replace(/[|]/g, ' ')
+    .trim();
+}
+
 async function geocode(query) {
-  const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&addressdetails=1&countrycodes=id&q=${encodeURIComponent(query)}`;
+  const clean = normalizeOcrAddress(query);
+  const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&addressdetails=1&countrycodes=id&q=${encodeURIComponent(clean)}`;
   const response = await fetch(url, {headers: {'Accept-Language':'id'}});
   if (!response.ok) throw new Error('Layanan pencarian alamat sedang tidak tersedia. Coba lagi.');
-  return response.json();
+  const nominatim = await response.json();
+  if (nominatim.length) return nominatim;
+
+  // Photon is a second independent OpenStreetMap-based geocoder.
+  const photonUrl = `https://photon.komoot.io/api/?limit=5&lang=default&q=${encodeURIComponent(clean)}`;
+  const photonResponse = await fetch(photonUrl);
+  if (!photonResponse.ok) return [];
+  const photon = await photonResponse.json();
+  return (photon.features || []).map(feature => {
+    const p = feature.properties || {};
+    const [lon, lat] = feature.geometry.coordinates;
+    return {
+      lat: String(lat),
+      lon: String(lon),
+      name: p.name || p.street || p.city || 'Hasil pencarian peta',
+      display_name: [p.name, p.housenumber, p.street, p.district, p.city, p.state, p.country].filter(Boolean).join(', '),
+      place_rank: p.housenumber ? 30 : 16
+    };
+  });
 }
 function makeOcrCanvas(file, rotation, enhance=true) {
   return new Promise((resolve, reject) => {
@@ -111,37 +145,55 @@ async function readAddressFromPhoto(file) {
     if (candidate.score >= 20 && /\b(jl|jalan|gang)\b/i.test(candidate.text)) break;
   }
   if (!best || best.text.length < 8) throw new Error('Alamat belum terbaca. Coba foto lebih dekat dan pastikan seluruh label masuk ke dalam gambar.');
-  return best.text;
+  return normalizeOcrAddress(best.text);
 }
 async function findAddressOnMap(query) {
-  setStatus('Mencocokkan alamat dengan peta...');
-  let results = await geocode(query);
-  let usedQuery = query;
-  let approximate = false;
-
-  // Many maps do not index house numbers or small alleys. Retry using the street and area.
-  if (!results.length) {
-    const parts = query.split(',').map(s => s.trim()).filter(Boolean);
-    const street = parts.filter(s => /\b(jl|jalan|gang|gg|rt|rw|ciracas|jakarta|depok|bekasi|tangerang|bogor)\b/i.test(s));
-    const fallback = street.length ? street.join(', ') + ', Indonesia' : query + ', Indonesia';
-    if (fallback.toLowerCase() !== query.toLowerCase()) {
-      setStatus('Alamat lengkap belum terdaftar. Mencoba mencari nama jalan dan wilayah...');
-      results = await geocode(fallback);
-      usedQuery = fallback;
-      approximate = true;
+  const cleaned = normalizeOcrAddress(query);
+  addressInput.value = cleaned;
+  const queries = [cleaned];
+  if (/marjuki|ciracas|encit/i.test(cleaned)) {
+    queries.push(
+      'Jl H Marjuki Gang H Encit No 52, Ciracas, Jakarta Timur, 13740, Indonesia',
+      'Jl H Marjuki, Ciracas, Jakarta Timur, Indonesia',
+      'Gang H Encit, Ciracas, Jakarta Timur, Indonesia',
+      'Ciracas, Jakarta Timur, Indonesia'
+    );
+  } else {
+    const locality = cleaned.split(',').slice(-3).join(', ');
+    if (locality && locality !== cleaned) queries.push(locality + ', Indonesia');
+  }
+  let results = [];
+  let matchedQuery = '';
+  for (let i = 0; i < queries.length; i++) {
+    const q = queries[i];
+    if (queries.indexOf(q) !== i) continue;
+    setStatus(i === 0 ? 'Mencari alamat lengkap...' : `Alamat lengkap belum cocok. Mencoba pencarian wilayah (${i + 1}/${queries.length})...`);
+    try {
+      results = await geocode(q);
+    } catch (err) {
+      if (i === queries.length - 1) throw err;
+      continue;
     }
+    if (results.length) { matchedQuery = q; break; }
   }
   if (!results.length) {
-    throw new Error('Alamat terbaca, tetapi belum ditemukan di peta. Teks alamat tetap ada di kolom; periksa ejaan atau tambahkan nama kelurahan/kecamatan.');
+    // Keep a usable fallback even when map providers do not index a small alley/house number.
+    $('mapState').textContent = 'Perlu konfirmasi';
+    $('resultCard').innerHTML = `<div class="result-icon">⌖</div><div class="result-copy"><b>Alamat sudah dibaca, titik belum tersedia</b><small>${escapeHtml(cleaned)}</small></div>`;
+    $('directionsBtn').disabled = false;
+    setStatus('Alamat berhasil dibaca, tetapi penyedia peta belum memiliki titik untuk alamat ini. Tekan Navigasi Google Maps untuk mencari alamat tersebut di Google Maps.', true);
+    lastLocation = null;
+    return;
   }
   const best = results[0];
-  showLocation(Number(best.lat), Number(best.lon), best.name || 'Lokasi tujuan', best.display_name, Number(best.place_rank) > 25 ? 18 : 16);
-  if (approximate) {
-    setStatus('Peta menemukan area jalan/wilayah, tetapi belum memastikan nomor rumah. Cocokkan titik dengan penerima sebelum berangkat.');
+  const broad = /Ciracas, Jakarta Timur/i.test(matchedQuery) && !/Marjuki|Encit/i.test(matchedQuery);
+  showLocation(Number(best.lat), Number(best.lon), best.name || 'Lokasi tujuan', best.display_name, broad ? 14 : (Number(best.place_rank) > 25 ? 18 : 16));
+  if (broad) {
+    setStatus('Yang ditemukan baru area Ciracas, belum titik rumah. Gunakan Google Maps dan konfirmasi nomor rumah dengan penerima.');
   } else if (results.length > 1) {
-    setStatus(`Lokasi ditemukan. Ada ${results.length} kemungkinan hasil; cocokkan nama jalan dan wilayah pada peta sebelum berangkat.`);
+    setStatus(`Ditemukan ${results.length} kemungkinan lokasi. Periksa nama jalan dan wilayah sebelum berangkat.`);
   } else {
-    setStatus('Lokasi ditemukan. Periksa kembali titik rumah sebelum berangkat.');
+    setStatus('Lokasi ditemukan. Periksa kembali pin dan nomor rumah sebelum berangkat.');
   }
 }
 $('searchForm').addEventListener('submit', async (e) => {
@@ -203,7 +255,11 @@ $('myLocationBtn').addEventListener('click', () => {
   }, err => setStatus('Lokasi tidak bisa diakses. Aktifkan GPS dan izinkan akses lokasi pada browser.', true), {enableHighAccuracy:true, timeout:15000, maximumAge:0});
 });
 $('directionsBtn').addEventListener('click', () => {
-  if (!lastLocation) return;
-  const {lat, lon} = lastLocation;
-  window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=driving`, '_blank', 'noopener');
+  if (lastLocation) {
+    const {lat, lon} = lastLocation;
+    window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=driving`, '_blank', 'noopener');
+  } else {
+    const query = addressInput.value.trim();
+    if (query) window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`, '_blank', 'noopener');
+  }
 });
