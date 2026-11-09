@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#101b35" />
+  <title>KurirKita — Pencari Lokasi Paket</title>
+  <link rel="preconnect" href="https://unpkg.com">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#"><span class="brand-mark">K</span><span>Kurir<span class="brand-accent">Kita</span></span></a>
+    <div class="top-meta"><span class="live-dot"></span> Asisten alamat kurir</div>
+  </header>
+
+  <main class="shell">
+    <section class="hero">
+      <div class="hero-copy">
+        <span class="eyebrow">TEMUKAN ALAMAT LEBIH CEPAT</span>
+        <h1>Alamat paket,<br><em>langsung ketemu.</em></h1>
+        <p>Masukkan alamat atau foto label paket. Kami bantu menemukan titik lokasi dan menampilkannya di peta.</p>
+        <div class="hero-points"><span>✓ Pencarian alamat</span><span>✓ Baca label foto</span><span>✓ Peta interaktif</span></div>
+      </div>
+      <div class="hero-art" aria-hidden="true">
+        <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div>
+        <div class="pin-card"><div class="pin-icon">⌖</div><div><b>Lokasi ditemukan</b><small>Siap menuju tujuan</small></div><span class="mini-check">✓</span></div>
+        <div class="route-line"></div><div class="route-dot"></div>
+      </div>
+    </section>
+
+    <section class="workspace">
+      <div class="panel search-panel">
+        <div class="panel-heading"><div><span class="step">01</span><h2>Cari alamat tujuan</h2></div><span class="panel-tag">PILIH SALAH SATU</span></div>
+        <div class="tabs" role="tablist">
+          <button class="tab active" id="textTab" type="button" aria-selected="true">⌕ <span>Ketik alamat</span></button>
+          <button class="tab" id="photoTab" type="button" aria-selected="false">▧ <span>Foto label paket</span></button>
+        </div>
+
+        <form id="searchForm" class="address-form">
+          <label for="addressInput">Alamat lengkap penerima</label>
+          <div class="input-wrap"><span class="input-icon">⌖</span><input id="addressInput" type="text" placeholder="Contoh: Jl. Margonda Raya No. 10, Depok" autocomplete="street-address" /><button class="clear-btn" id="clearBtn" type="button" aria-label="Hapus alamat">×</button></div>
+          <p class="hint">Sertakan nomor rumah, RT/RW, kelurahan, kecamatan, dan kota jika tersedia.</p>
+          <div class="photo-area" id="photoArea" hidden>
+            <label class="upload-box" for="photoInput"><span class="upload-symbol">＋</span><b>Unggah foto label paket</b><small>JPG, PNG, atau WEBP · Maks. 10 MB</small><span class="choose-file">Pilih foto</span></label>
+            <input id="photoInput" type="file" accept="image/*" hidden />
+            <div class="preview-wrap" id="previewWrap" hidden><img id="previewImage" alt="Pratinjau label paket"><div class="preview-info"><b id="fileName">Foto label</b><small id="ocrStatus">Siap dibaca</small></div><button id="removePhoto" type="button" aria-label="Hapus foto">×</button></div>
+            <p class="hint">Foto boleh miring atau terputar. Sistem akan mencoba 4 arah foto, memperjelas kontras, membaca alamat, lalu mencari area di peta.</p>
+          </div>
+          <button class="primary-btn" id="findBtn" type="submit"><span>Temukan lokasi</span><span>→</span></button>
+          <div class="status" id="status" role="status" aria-live="polite"></div>
+        </form>
+        <div class="privacy-note"><span>⌑</span> Foto diproses di browser untuk membaca teks. Periksa kembali hasil OCR sebelum mencari.</div>
+      </div>
+
+      <div class="panel map-panel">
+        <div class="map-heading"><div><span class="step">02</span><h2>Titik lokasi paket</h2></div><span class="accuracy-pill" id="mapState">Menunggu alamat</span></div>
+        <div id="map"></div>
+        <div class="result-card" id="resultCard">
+          <div class="result-icon">⌖</div><div class="result-copy"><b>Lokasi tujuan akan tampil di sini</b><small>Masukkan alamat untuk mulai mencari.</small></div>
+        </div>
+        <div class="map-actions"><button class="secondary-btn" id="myLocationBtn" type="button">◎ Lokasi saya</button><button class="secondary-btn" id="directionsBtn" type="button" disabled>↗ Petunjuk arah</button></div>
+        <p class="map-disclaimer">Titik peta adalah hasil pencocokan alamat, bukan jaminan posisi pintu rumah. Cocokkan detail dan konfirmasi ke penerima bila perlu.</p>
+      </div>
+    </section>
+    <footer><span>© 2026 KurirKita</span><span>Dirancang untuk membantu pekerjaan kurir Indonesia</span></footer>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
